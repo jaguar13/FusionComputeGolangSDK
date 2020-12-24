@@ -22,6 +22,7 @@ type Manager interface {
 	GetVM(vmUri string) (*Vm, error)
 	CloneVm(templateUri string, request CloneVmRequest) (*CloneVmResponse, error)
 	DeleteVm(vmUri string) (*DeleteVmResponse, error)
+	UploadImage(vmUri string, request ImportTemplateRequest) (*ImportTemplateResponse, error)
 }
 
 func NewManager(client client.FusionComputeClient, siteUri string) Manager {
@@ -48,6 +49,16 @@ func (m *manager) CloneVm(templateUri string, request CloneVmRequest) (*CloneVmR
 		}
 	}
 
+	vm, err := m.GetVM(templateUri)
+	if err != nil {
+		return nil, err
+	}
+	disks := vm.VmConfig.Disks
+	if len(disks) > 0 {
+		if request.Config.Disks[0].QuantityGB < vm.VmConfig.Disks[0].QuantityGB {
+			request.Config.Disks[0].QuantityGB = vm.VmConfig.Disks[0].QuantityGB
+		}
+	}
 	var cloneVmResponse CloneVmResponse
 	api, err := m.client.GetApiClient()
 	if err != nil {
@@ -138,6 +149,27 @@ func (m *manager) GetVM(vmUri string) (*Vm, error) {
 		return nil, common.FormatHttpError(resp)
 	}
 	return &item, nil
+}
+
+func (m *manager) UploadImage(vmUri string, request ImportTemplateRequest) (*ImportTemplateResponse, error) {
+	var res ImportTemplateResponse
+	api, err := m.client.GetApiClient()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := api.R().SetBody(&request).Post(path.Join(vmUri, "action", "import"))
+	if err != nil {
+		return nil, err
+	}
+	if resp.IsSuccess() {
+		err := json.Unmarshal(resp.Body(), &res)
+		if err != nil {
+			return nil, err
+		}
+		return &res, nil
+	} else {
+		return nil, common.FormatHttpError(resp)
+	}
 }
 
 func parseMask(num int) (mask string, err error) {
